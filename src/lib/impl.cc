@@ -51,6 +51,7 @@ static utils::ustring handle_bytestring(const cbor_item_t *item);
 static std::string handle_string(const cbor_item_t *item);
 static uint64_t handle_uint(const cbor_item_t *item);
 static int64_t handle_negint(const cbor_item_t *item);
+static Data handle_tag(const cbor_item_t *item);
 
 static Data adapt_ts(Data&& in);
 static Data adapt_alg(Data&& in);
@@ -234,26 +235,32 @@ App::check(const std::string& in) {
 				": Error building the certificate manager");
 	Map::value_type::const_iterator k =
 		claim->prhdr.get().find(MapKey(std::string("kid")));
-	if (claim->prhdr.get().end() == k)
-		throw Exception(__FILE__, __LINE__, error::INVALID_ARGS,
-				": No key id in the protected headers");
+	if (claim->prhdr.get().end() == k) {
+		k = claim->unprhdr.get().find(MapKey(std::string("kid")));
+		if (claim->prhdr.get().end() == k)
+			throw Exception(__FILE__, __LINE__, error::INVALID_ARGS,
+					": No key id in the protected headers");
+	}
 	const ByteString *kid = dynamic_cast<const ByteString *>(k->second.get());
 	const KeyData& key = cert_mgr->key(kid->get().data(),
 					   kid->get().length());
 	if (!key.key())
 		return Result{Claim(claim.release()), key.info(),
-			Status::UnknownKey};
+			Status::UnknownKey,
+			std::string(reinterpret_cast<const char *>(buf), sz)};
 	time_point now = clock_type::now();
 	if (now > key.info().to() || now > key.info().cert_to() ||
 	    now < key.info().from() || now < key.info().cert_from())
 		return Result{Claim(claim.release()), key.info(),
-			Status::ExpiredClaim};
+			Status::ExpiredClaim,
+			std::string(reinterpret_cast<const char *>(buf), sz)};
 
 	bool r = do_check(key.key().get(), buf, sz, cbor_bytestring_handle(e3),
 			  cbor_bytestring_length(e3));
 
 	return Result{Claim(claim.release()), key.info(),
-		r ? Status::Ok : Status::InvalidSignature};
+		r ? Status::Ok : Status::InvalidSignature,
+		std::string(reinterpret_cast<const char *>(buf), sz)};
 }
 
 static Map::value_type
@@ -368,7 +375,7 @@ unprotected_headers(const cbor_item_t *item) {
 				": The unprotected headers must be a map");
 	}
 
-	return handle_map(item);
+	return adapt_protected(handle_map(item));
 }
 
 static Data
@@ -618,8 +625,7 @@ handle_value(const cbor_item_t *item) {
 					": A map value must be definite");
 		return Data(new Map(handle_map(item)));
 	case CBOR_TYPE_TAG:
-		throw Exception(__FILE__, __LINE__, error::INVALID_ARGS,
-				": A value cannot by of tag type");
+		return handle_tag(item);
 	case CBOR_TYPE_FLOAT_CTRL:
 		throw Exception(__FILE__, __LINE__, error::INTERNAL,
 				": Float values are not yet supported");
@@ -650,6 +656,15 @@ handle_uint(const cbor_item_t *item) {
 static int64_t
 handle_negint(const cbor_item_t *item) {
 	return -1 - static_cast<int64_t>(cbor_get_int(item));
+}
+
+static Data
+handle_tag(const cbor_item_t *item) {
+	cbor_item_t *t = cbor_tag_item(item);
+	if (!t)
+		throw Exception(__FILE__, __LINE__, error::INVALID_ARGS,
+				": empty tagged data");
+	return handle_value(t);
 }
 
 static bool

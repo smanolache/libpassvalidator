@@ -8,6 +8,7 @@ namespace pv {
 namespace utils {
 
 static unsigned char do_map(char c);
+static char rmap(unsigned char c);
 
 ustring
 base45_dec(const std::string& in) {
@@ -30,7 +31,8 @@ base45_dec(const char *s, const char *e) {
 		}
 		p += do_map(*s++) * 45;
 		if (e == s) {
-			r.append(1, static_cast<unsigned char>(p >> 8));
+			if (p >= 256)
+				r.append(1, static_cast<unsigned char>(p >> 8));
 			r.append(1, static_cast<unsigned char>(p & 0xff));
 			return r;
 		}
@@ -75,7 +77,75 @@ do_map(char c) {
 				": %02x is not a valid base45 char",
 				static_cast<int>(c));
 	return 10 + c - 'A';
-	
+}
+
+std::string
+base45_enc(const utils::ustring& in) {
+	return base45_enc(in.data(), in.length());
+}
+
+std::string
+base45_enc(const unsigned char *buf, std::size_t l) {
+	return base45_enc(buf, buf + l);
+}
+
+std::string
+base45_enc(const unsigned char *s, const unsigned char *e) {
+	std::string r;
+	while (e != s) {
+		unsigned short p = *s++;
+		if (e == s) {
+			unsigned char c1 = p / 45;
+			unsigned char c2 = p % 45;
+			r.append(1, rmap(c2));
+			r.append(1, rmap(c1));
+			return r;
+		}
+		p <<= 8;
+		p |= *s++;
+		unsigned char c0 = p / 2025;
+		unsigned short tmp0 = p % 2025;
+		unsigned char c1 = tmp0 / 45;
+		unsigned char c2 = tmp0 % 45;
+		r.append(1, rmap(c2));
+		r.append(1, rmap(c1));
+		r.append(1, rmap(c0));
+	}
+	return r;
+}
+
+static char
+rmap(unsigned char c) {
+	// 0 <= c < 45
+	if (c >= 36)
+		switch (c) {
+		case 36:
+			return ' ';
+		case 37:
+			return '$';
+		case 38:
+			return '%';
+		case 39:
+			return '*';
+		case 40:
+			return '+';
+		case 41:
+			return '-';
+		case 42:
+			return '.';
+		case 43:
+			return '/';
+		case 44:
+			return ':';
+		default:
+			throw Exception(__FILE__, __LINE__, error::INVALID_ARGS,
+					": out of range: %u",
+					static_cast<unsigned int>(c));
+		}
+	if (c <= 9)
+		return c + '0';
+	// 10 <= c < 36
+	return c - 10 + 'A';
 }
 
 }

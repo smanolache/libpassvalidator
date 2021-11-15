@@ -5,7 +5,7 @@
 #include <fstream>
 #include "pv/intf.hh"
 
-static const char *fn;
+static const char *fn, *out;
 
 static void parse_cmd_line(int argc, char *argv[]);
 static void usage(const char *p);
@@ -45,6 +45,13 @@ do_main(int argc, char *argv[]) {
 
 	pv::Result rlt = app.check(r);
 	std::cout << std::get<0>(rlt) << std::endl;
+
+	if (out) {
+		std::ofstream of;
+		of.exceptions(std::ofstream::badbit | std::ofstream::failbit);
+		of.open(out);
+		of.write(std::get<3>(rlt).data(), std::get<3>(rlt).length());
+	}
 
 	pv::App::shutdown();
 
@@ -90,11 +97,21 @@ static void
 parse_cmd_line(int argc, char *argv[]) {
 	int c;
 
-	while ((c = getopt(argc, argv, "h")) != EOF)
+	while ((c = getopt(argc, argv, "ho:")) != EOF)
 		switch (c) {
 		case 'h':
 			usage(argv[0]);
 			exit(0);
+		case 'o':
+			if (!optarg) {
+				std::cerr << "-o must be followed by the "
+					"output file for the 'to-sign' block."
+					  << std::endl;
+				usage(argv[0]);
+				exit(1);
+			}
+			out = optarg;
+			break;
 		case '?':
 			usage(argv[0]);
 			exit(1);
@@ -110,5 +127,6 @@ parse_cmd_line(int argc, char *argv[]) {
 
 static void
 usage(const char *p) {
-	std::cerr << "Usage: " << p << " [-d]" << std::endl;
+	std::cerr << "Usage: " << p << " [-o output file for 'to-sign' block]"
+		  << std::endl;
 }

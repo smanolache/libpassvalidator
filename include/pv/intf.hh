@@ -97,7 +97,7 @@ KeyInfo::country() const noexcept {
 	return country_;
 }
 
-typedef std::tuple<Claim, KeyInfo, Status::type> Result;
+typedef std::tuple<Claim, KeyInfo, Status::type, std::string> Result;
 
 class App {
 private:
